@@ -1,6 +1,6 @@
 from typing import Any
 from sqlalchemy.orm import as_declarative, declared_attr
-from sqlalchemy import Column, Integer
+from sqlalchemy import Column, Integer, DateTime
 
 @as_declarative()
 class Base:
@@ -13,3 +13,4 @@ class Base:
         return cls.__name__.lower()
         
     version = Column(Integer, default=1, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)

@@ -4,17 +4,29 @@ from app.services.ai_service import call_novita_api
 from app.core.logger import logger
 from app.models.quiz import Quiz, Question
 from app.models.usage import Usage
+from app.models.task import BackgroundTask
 from sqlalchemy import select
+from datetime import datetime
 
-async def generate_quiz_task(db: AsyncSession, user_id: int, topic: str, difficulty: str, num_questions: int):
+async def generate_quiz_task(db: AsyncSession, task_id: int, user_id: int, topic: str, difficulty: str, num_questions: int):
     # Async wrapper meant to be easily transitioned to Celery worker later
-    logger.info(f"Starting async quiz generation for topic: {topic}")
+    logger.info(f"Starting async quiz generation Task ID {task_id} for topic: {topic}")
+    
+    task = await db.get(BackgroundTask, task_id)
+    if not task: return
+    
+    task.status = "processing"
+    await db.commit()
     
     prompt = f"Generate {num_questions} multiple choice questions about {topic} at {difficulty} difficulty. Output strict JSON format: [{{\"question_text\": \"...\", \"options\": {{\"A\": \"...\", \"B\": \"...\", \"C\": \"...\", \"D\": \"...\"}}, \"correct_answer\": \"A\"}}]"
     
     response = await call_novita_api(prompt)
     if not response:
         logger.error("AI call failed. Quiz generation aborted.")
+        task.status = "failed"
+        task.error_message = "AI service timeout."
+        task.updated_at = datetime.utcnow()
+        await db.commit()
         return
         
     try:
@@ -38,8 +50,14 @@ async def generate_quiz_task(db: AsyncSession, user_id: int, topic: str, difficu
         if usage:
             usage.tokens_used += len(response) // 4
             
+        task.status = "completed"
+        task.updated_at = datetime.utcnow()
         await db.commit()
         logger.info(f"Quiz {new_quiz.id} generated successfully")
         
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         logger.error(f"Failed to parse AI JSON response: {response}")
+        task.status = "failed"
+        task.error_message = f"Parse error: {str(e)}"
+        task.updated_at = datetime.utcnow()
+        await db.commit()

@@ -37,4 +37,13 @@ class RateLimiter:
             
         return count >= (0.8 * max_daily_quizzes)
         
+    async def check_ai_cost_hard_limit(self, user_id: str, max_tokens_per_day: int) -> bool:
+        cache_key = f"usage:user:{user_id}:tokens_today"
+        count = await cache_client.redis.get(cache_key)
+        count = int(count) if count else 0
+        
+        if count >= max_tokens_per_day:
+            raise HTTPException(status_code=402, detail="GPU Token Limit Exhausted. Please upgrade plan.")
+        return False
+        
 rate_limiter = RateLimiter(requests=100, window=60)
