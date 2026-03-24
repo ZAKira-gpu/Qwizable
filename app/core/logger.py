@@ -1,17 +1,19 @@
 import logging
+from pythonjsonlogger import jsonlogger
 import sys
 
-def setup_logger(name: str) -> logging.Logger:
-    logger = logging.getLogger(name)
+def setup_logger():
+    logger = logging.getLogger("qwizable")
     logger.setLevel(logging.INFO)
     
+    # Avoid duplicating log handlers
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        ))
-        logger.addHandler(handler)
-        
+        logHandler = logging.StreamHandler(sys.stdout)
+        formatter = jsonlogger.JsonFormatter(
+            '%(asctime)s %(levelname)s %(name)s %(message)s'
+        )
+        logHandler.setFormatter(formatter)
+        logger.addHandler(logHandler)
     return logger
 
-logger = setup_logger("qwizable")
+logger = setup_logger()

@@ -26,6 +26,8 @@ async def get_smart_difficulty(db: AsyncSession, user_id: int, requested_difficu
         return "easy"
     return "medium"
 
+from sqlalchemy import text
+
 async def process_document_and_generate_quiz(
     db: AsyncSession, 
     task_id: int, 
@@ -44,6 +46,14 @@ async def process_document_and_generate_quiz(
     
     task.status = "processing"
     await db.commit()
+    
+    # Secure Postgres Advisory Lock to prevent concurrent generation abuse
+    lock_granted = await db.scalar(text("SELECT pg_try_advisory_lock(:id)"), {"id": user_id})
+    if not lock_granted:
+        task.status = "failed"
+        task.error_message = "Limit hit: You are already generating a document quiz."
+        await db.commit()
+        return
     
     try:
         full_text = await extract_text_from_file(file_bytes, filename, start_page, end_page)
@@ -123,3 +133,6 @@ async def process_document_and_generate_quiz(
             task.error_message = str(e)
             task.updated_at = datetime.utcnow()
             await db.commit()
+    finally:
+        # Release concurrency memory lock
+        await db.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": user_id})
