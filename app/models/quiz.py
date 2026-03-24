@@ -9,6 +9,7 @@ class Quiz(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     topic = Column(String, nullable=False)
     difficulty = Column(String, nullable=False)
+    thread_id = Column(String, index=True, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

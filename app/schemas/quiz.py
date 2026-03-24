@@ -6,6 +6,8 @@ class QuizRequest(BaseModel):
     topic: str
     difficulty: str
     num_questions: int = 5
+    thread_id: Optional[str] = None
+    instructions: Optional[str] = None
 
 class QuestionResponse(BaseModel):
     id: int
@@ -16,6 +18,7 @@ class QuizResponse(BaseModel):
     id: int
     topic: str
     difficulty: str
+    thread_id: Optional[str] = None
     created_at: datetime
     questions: Optional[List[QuestionResponse]] = []
     

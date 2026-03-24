@@ -1,7 +1,7 @@
 import fitz
 import docx
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 import re
 import asyncio
 from app.services.ocr_service import extract_text_via_ocr
@@ -38,27 +38,30 @@ def chunk_text(text: str, max_tokens: int = 800) -> List[str]:
         
     return chunks
 
-async def extract_text_from_file(contents: bytes, filename: str) -> str:
+async def extract_text_from_file(contents: bytes, filename: str, start_page: Optional[int] = None, end_page: Optional[int] = None) -> str:
     ext = filename.split('.')[-1].lower()
     
     if ext == 'pdf':
         doc = fitz.open(stream=contents, filetype="pdf")
-        page_texts = [""] * len(doc)
+        
+        s_idx = max(0, start_page - 1) if start_page is not None else 0
+        e_idx = min(len(doc), end_page) if end_page is not None else len(doc)
+        
+        page_texts = [""] * (e_idx - s_idx)
         ocr_tasks = []
         
-        for i in range(len(doc)):
-            page = doc.load_page(i)
+        for local_i, page_num in enumerate(range(s_idx, e_idx)):
+            page = doc.load_page(page_num)
             text = page.get_text().strip()
             
-            # Fast-path check: If dense text exists, skip OCR completely
+            # Fast-path check
             if len(text) < 100:
                 pix = page.get_pixmap()
                 img_bytes = pix.tobytes("jpeg")
-                ocr_tasks.append((i, extract_text_via_ocr(img_bytes)))
+                ocr_tasks.append((local_i, extract_text_via_ocr(img_bytes)))
             else:
-                page_texts[i] = text + " "
+                page_texts[local_i] = text + " "
                 
-        # Fire synchronous paddle models via asyncio threadpool mapped to gather
         if ocr_tasks:
             indices = [task[0] for task in ocr_tasks]
             futures = [task[1] for task in ocr_tasks]
@@ -66,7 +69,7 @@ async def extract_text_from_file(contents: bytes, filename: str) -> str:
             results = await asyncio.gather(*futures, return_exceptions=True)
             for idx, res in zip(indices, results):
                 if isinstance(res, Exception):
-                    logger.error(f"Failed to OCR page {idx}: {res}")
+                    logger.error(f"Failed to OCR page {s_idx + idx}: {res}")
                 else:
                     page_texts[idx] = res + " "
                     

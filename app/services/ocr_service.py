@@ -1,45 +1,62 @@
-from paddleocr import PaddleOCR
-import numpy as np
-from PIL import Image
-import io
-import asyncio
+import base64
+import httpx
+from app.core.config import settings
 from app.core.logger import logger
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
-logger.info("Initializing Local PaddleOCR engine...")
-ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+class OCRError(Exception):
+    pass
 
-def resize_image(image: Image.Image, max_size=1024) -> Image.Image:
-    """Scales down massive images to save VRAM and OCR times."""
-    image.thumbnail((max_size, max_size))
-    return image
-
-def _sync_ocr_image(image_bytes: bytes) -> str:
-    try:
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image = resize_image(image)
-        img_np = np.array(image)
-
-        result = ocr.ocr(img_np)
-
-        extracted_text = []
-        if result:
-            for res in result:
-                if not res: continue
-                if isinstance(res, dict) and "rec_texts" in res:
-                    extracted_text.extend(res["rec_texts"])
-                elif isinstance(res, list):
-                    for line in res:
-                        if isinstance(line, list) and len(line) >= 2:
-                            extracted_text.append(line[1][0])
-
-        return "\n".join(extracted_text)
-    except Exception as e:
-        logger.error(f"Sync OCR Pipeline Failure: {e}")
-        return ""
-
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((httpx.RequestError, httpx.TimeoutException, OCRError))
+)
 async def extract_text_via_ocr(image_bytes: bytes) -> str:
-    try:
-        return await asyncio.to_thread(_sync_ocr_image, image_bytes)
-    except Exception as e:
-        logger.error(f"Async PaddleOCR threadoff failed: {str(e)}")
+    """
+    Uses ERNIE 4.5 VL API to extract text and visual context together natively, 
+    preserving multi-modal contextual layout from mixed diagrams.
+    """
+    if not settings.NOVITA_API_KEY:
+        logger.warning("NOVITA_API_KEY missing - Vision extraction disabled.")
         return ""
+        
+    b64_image = base64.b64encode(image_bytes).decode('utf-8')
+    data_uri = f"data:image/jpeg;base64,{b64_image}"
+    
+    headers = {
+        "Authorization": f"Bearer {settings.NOVITA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "ernie-4.5-vl", 
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Extract all readable text, and describe any visual diagrams or charts in detail. Return only the extracted and described information cleanly."},
+                    {"type": "image_url", "image_url": {"url": data_uri}}
+                ]
+            }
+        ],
+        "max_tokens": 1500,
+        "temperature": 0.1
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                "https://api.novita.ai/v3/openai/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                return result["choices"][0]["message"]["content"].strip()
+            raise OCRError("Invalid ERNIE 4.5 VL response format.")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Vision API HTTP Error {e.response.status_code}: {e.response.text}")
+            raise OCRError(f"Vision Failed with status {e.response.status_code}")

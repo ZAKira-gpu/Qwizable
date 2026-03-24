@@ -8,10 +8,10 @@ from app.models.result import Result
 from sqlalchemy import select, func
 from datetime import datetime
 import asyncio
+from typing import Optional
 from app.core.logger import logger
 
 async def get_smart_difficulty(db: AsyncSession, user_id: int, requested_difficulty: str) -> str:
-    """Smart Difficulty Scaling based on historic Result scores"""
     if requested_difficulty != "auto":
         return requested_difficulty
         
@@ -33,7 +33,11 @@ async def process_document_and_generate_quiz(
     file_bytes: bytes, 
     filename: str, 
     difficulty: str, 
-    num_questions: int
+    num_questions: int,
+    thread_id: Optional[str] = None,
+    instructions: Optional[str] = None,
+    start_page: Optional[int] = None,
+    end_page: Optional[int] = None
 ):
     task = await db.get(BackgroundTask, task_id)
     if not task: return
@@ -42,24 +46,27 @@ async def process_document_and_generate_quiz(
     await db.commit()
     
     try:
-        # 1. Pipeline Extract & Clean
-        full_text = await extract_text_from_file(file_bytes, filename)
+        full_text = await extract_text_from_file(file_bytes, filename, start_page, end_page)
         if not full_text:
-            raise ValueError("No text could be extracted from the document.")
+            raise ValueError("No text could be extracted from the document bounds.")
             
-        # 2. Chunking & Priority Filtering
         chunks = chunk_text(full_text, max_tokens=800)
-        # Priority filter: keep top 10 chunks based on unique semantic variance
         chunks = sorted(chunks, key=lambda c: len(set(c.split())), reverse=True)[:10]
         
-        # 3. Smart Adaptive Difficulty
         actual_diff = await get_smart_difficulty(db, user_id, difficulty)
         
-        # 4. Asynchronously generate quizzes per chunk
-        questions_per_chunk = max(1, (num_questions // len(chunks)) + 1)
-        tasks = [generate_quiz_from_chunk(chunk, actual_diff, questions_per_chunk) for chunk in chunks]
+        # Build Thread Context
+        past_questions_context = ""
+        if thread_id:
+            query = select(Question).join(Quiz).where(Quiz.thread_id == thread_id).where(Quiz.user_id == user_id)
+            result = await db.execute(query)
+            past_qs = [q.question_text for q in result.scalars().all()]
+            if past_qs:
+                past_questions_context = "PREVIOUS THREAD QUESTIONS (Do not duplicate these):\n" + "\n".join(f"- {q}" for q in past_qs)
         
-        # 5. Partial Failure Handling
+        questions_per_chunk = max(1, (num_questions // len(chunks)) + 1)
+        tasks = [generate_quiz_from_chunk(chunk, actual_diff, questions_per_chunk, instructions, past_questions_context) for chunk in chunks]
+        
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         all_questions = []
@@ -74,13 +81,11 @@ async def process_document_and_generate_quiz(
         if failed_chunks == len(chunks):
             raise ValueError("All AI chunk executions failed. Cannot generate quiz.")
             
-        # 6. Semantic Merging
         final_questions = await merge_and_deduplicate_quizzes(all_questions, num_questions)
         if not final_questions:
             raise ValueError("Failed to aggregate valid deductive quiz data from the document.")
             
-        # 7. Database Save
-        new_quiz = Quiz(user_id=user_id, topic=f"Generated from {filename}", difficulty=actual_diff)
+        new_quiz = Quiz(user_id=user_id, topic=f"Generated from {filename}", difficulty=actual_diff, thread_id=thread_id)
         db.add(new_quiz)
         await db.commit()
         await db.refresh(new_quiz)
@@ -98,7 +103,6 @@ async def process_document_and_generate_quiz(
             )
             db.add(question)
             
-        # 8. Usage Tracking
         usage = await db.scalar(select(Usage).where(Usage.user_id == user_id).order_by(Usage.created_at.desc()))
         if usage:
             usage.tokens_used += sum([len(c) for c in chunks]) // 4
@@ -109,7 +113,7 @@ async def process_document_and_generate_quiz(
             
         task.updated_at = datetime.utcnow()
         await db.commit()
-        logger.info(f"Document Quiz {new_quiz.id} generated with {len(final_questions)} questions dynamically.")
+        logger.info(f"Document Quiz {new_quiz.id} generated natively in thread {thread_id}.")
         
     except Exception as e:
         logger.error(f"Document AI Pipeline Failed: {str(e)}")
