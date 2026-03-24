@@ -30,7 +30,7 @@ async def extract_text_via_ocr(image_bytes: bytes) -> str:
     }
     
     payload = {
-        "model": "ernie-4.5-vl-28b-a3b", 
+        "model": "baidu/ernie-4.5-vl-28b-a3b", 
         "messages": [
             {
                 "role": "user",
@@ -47,7 +47,7 @@ async def extract_text_via_ocr(image_bytes: bytes) -> str:
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             response = await client.post(
-                "https://api.novita.ai/v3/openai/chat/completions",
+                "https://api.novita.ai/openai/chat/completions",
                 headers=headers,
                 json=payload
             )

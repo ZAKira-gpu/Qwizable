@@ -35,13 +35,13 @@ async def call_novita_api(prompt: str) -> Optional[str]:
         return None
         
     max_retries = 3
-    base_url = "https://api.novita.ai/v3/openai/chat/completions"
+    base_url = "https://api.novita.ai/openai/chat/completions"
     headers = {
         "Authorization": f"Bearer {settings.NOVITA_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "ernie-4.5-vl-28b-a3b",
+        "model": "baidu/ernie-4.5-vl-28b-a3b",
         "messages": [{"role": "user", "content": prompt}]
     }
     
