@@ -30,7 +30,7 @@ async def extract_text_via_ocr(image_bytes: bytes) -> str:
     }
     
     payload = {
-        "model": "ernie-4.5-vl", 
+        "model": "ernie-4.5-vl-28b-a3b", 
         "messages": [
             {
                 "role": "user",

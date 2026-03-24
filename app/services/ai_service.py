@@ -41,7 +41,7 @@ async def call_novita_api(prompt: str) -> Optional[str]:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "meta-llama/llama-3-8b-instruct",
+        "model": "ernie-4.5-vl-28b-a3b",
         "messages": [{"role": "user", "content": prompt}]
     }
     
