@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
@@ -11,6 +11,7 @@ from app.api.v1.user import get_current_user
 from app.services.quiz_service import generate_quiz_task
 from app.services.evaluation_service import evaluate_answers
 from app.services.user_service import increment_usage
+from app.services.document_ai_service import process_document_and_generate_quiz
 
 router = APIRouter()
 
@@ -34,6 +35,37 @@ async def generate_quiz(
     return {
         "success": True, 
         "data": {"message": "Quiz generation started.", "task_id": task.id}, 
+        "error": None
+    }
+
+@router.post("/generate-from-file", status_code=202)
+async def generate_from_file(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    difficulty: str = Form("medium"),
+    num_questions: int = Form(5),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await increment_usage(db, current_user.id)
+    
+    file_bytes = await file.read()
+    
+    task = BackgroundTask(
+        job_name=f"document_quiz_{current_user.id}_{file.filename}",
+        task_metadata={"user_id": current_user.id, "filename": file.filename, "difficulty": difficulty, "num_questions": num_questions}
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    
+    background_tasks.add_task(
+        process_document_and_generate_quiz, db, task.id, current_user.id, file_bytes, file.filename, difficulty, num_questions
+    )
+    
+    return {
+        "success": True, 
+        "data": {"message": "Document Quiz generation started.", "task_id": task.id}, 
         "error": None
     }
 
