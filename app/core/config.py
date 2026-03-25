@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     
     NOVITA_API_KEY: str
     PADDLE_API_KEY: str
-    PADDLE_PUBLIC_KEY: str
+    PADDLE_PUBLIC_KEY: str = "" # Optional for V2 users
     PADDLE_WEBHOOK_SECRET: str
     
     # Feature Flags
