@@ -7,8 +7,8 @@ class Payment(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    provider = Column(String, nullable=False) # 'paddle' or 'coinremitter'
     status = Column(String, nullable=False) # 'pending', 'confirmed', 'failed'
+    provider = Column(String, nullable=False, default="paddle") # 'paddle'
     amount = Column(Float, nullable=False)
     webhook_id = Column(String, unique=True, index=True, nullable=True) # IDEMPOTENCY
     
