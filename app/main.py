@@ -24,6 +24,9 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
+if settings.ENVIRONMENT == "production":
+    app.debug = False
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,6 +65,15 @@ async def recover_tasks():
 
 @app.on_event("startup")
 async def startup_event():
+    # Database Connection Check
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+            logging.info("Database connection strictly verified on startup.")
+    except Exception as e:
+        logging.critical(f"Database connection failed on startup: {e}")
+        raise e
+
     # Cold Start Optimization
     if settings.FEATURES.get("ai_tutor"):
         await warmup_ai()

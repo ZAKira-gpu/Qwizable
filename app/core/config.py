@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     
     NOVITA_API_KEY: str
     PADDLE_API_KEY: str
+    PADDLE_PUBLIC_KEY: str
     PADDLE_WEBHOOK_SECRET: str
     COINREMITTER_API_KEY: str
     COINREMITTER_PASSWORD: str
