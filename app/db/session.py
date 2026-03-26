@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.core.config import settings
 
@@ -6,8 +7,10 @@ engine = create_async_engine(
     echo=False,
     future=True,
     pool_pre_ping=True,
-    prepared_statement_cache_size=0,
-    connect_args={"statement_cache_size": 0}
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4()}__"
+    }
 )
 
 async_session = async_sessionmaker(
