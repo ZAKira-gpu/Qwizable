@@ -30,7 +30,15 @@ async def generate_quiz_task(db: AsyncSession, task_id: int, user_id: int, topic
         return
         
     try:
-        data = json.loads(response)
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            try:
+                response = response.split("```")[1].split("```")[0].strip()
+            except IndexError:
+                response = response.replace("```", "").strip()
+        
+        data = json.loads(response.strip())
         
         new_quiz = Quiz(user_id=user_id, topic=topic, difficulty=difficulty)
         db.add(new_quiz)
