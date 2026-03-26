@@ -67,11 +67,14 @@ async def recover_tasks():
 async def startup_event():
     # Database Connection Check
     try:
-        async with engine.connect() as conn:
+        async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
-            logging.info("Database connection strictly verified on startup.")
+            from app.db.base_class import Base
+            from app.models import User, Usage, AuditLog, Payment, Subscription, Quiz, Question, UserAnswer, Result, BackgroundTask
+            await conn.run_sync(Base.metadata.create_all)
+            logging.info("Database schema natively initialized and verified.")
     except Exception as e:
-        logging.critical(f"Database connection failed on startup: {e}")
+        logging.critical(f"Database schema initialization failed on startup: {e}")
         raise e
 
     # Cold Start Optimization
