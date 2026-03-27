@@ -20,50 +20,64 @@ async def generate_quiz_task(db: AsyncSession, task_id: int, user_id: int, topic
     
     prompt = f"Generate {num_questions} multiple choice questions about {topic} at {difficulty} difficulty. Output strict JSON format: [{{\"question_text\": \"...\", \"options\": {{\"A\": \"...\", \"B\": \"...\", \"C\": \"...\", \"D\": \"...\"}}, \"correct_answer\": \"A\"}}]"
     
-    response = await call_novita_api(prompt)
-    if not response:
-        logger.error("AI call failed. Quiz generation aborted.")
-        task.status = "failed"
-        task.error_message = "AI service timeout."
-        task.updated_at = datetime.utcnow()
-        await db.commit()
-        return
-        
-    try:
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0].strip()
-        elif "```" in response:
-            try:
-                response = response.split("```")[1].split("```")[0].strip()
-            except IndexError:
-                response = response.replace("```", "").strip()
-        
-        data = json.loads(response.strip())
-        
-        new_quiz = Quiz(user_id=user_id, topic=topic, difficulty=difficulty)
-        db.add(new_quiz)
-        await db.commit()
-        await db.refresh(new_quiz)
-        
-        for q in data:
-            question = Question(
-                quiz_id=new_quiz.id,
-                question_text=q["question_text"],
-                options=q["options"],
-                correct_answer=q["correct_answer"]
-            )
-            db.add(question)
+    max_retries = 3
+    for attempt in range(max_retries):
+        response = await call_novita_api(prompt)
+        if not response:
+            if attempt == max_retries - 1:
+                logger.error("AI call failed repeatedly. Quiz generation aborted.")
+                task.status = "failed"
+                task.error_message = "AI service timeout."
+                task.updated_at = datetime.utcnow()
+                await db.commit()
+                return
+            continue
             
-        usage = await db.scalar(select(Usage).where(Usage.user_id == user_id).order_by(Usage.created_at.desc()))
-        if usage:
-            usage.tokens_used += len(response) // 4
+        try:
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0].strip()
+            elif "```" in response:
+                try:
+                    response = response.split("```")[1].split("```")[0].strip()
+                except IndexError:
+                    response = response.replace("```", "").strip()
             
-        task.status = "completed"
-        task.updated_at = datetime.utcnow()
-        await db.commit()
-        logger.info(f"Quiz {new_quiz.id} generated successfully")
-        
-    except json.JSONDecodeError as e:
+            data = json.loads(response.strip())
+            
+            new_quiz = Quiz(user_id=user_id, topic=topic, difficulty=difficulty)
+            db.add(new_quiz)
+            await db.commit()
+            await db.refresh(new_quiz)
+            
+            for q in data:
+                question = Question(
+                    quiz_id=new_quiz.id,
+                    question_text=q["question_text"],
+                    options=q["options"],
+                    correct_answer=q["correct_answer"]
+                )
+                db.add(question)
+                
+            usage = await db.scalar(select(Usage).where(Usage.user_id == user_id).order_by(Usage.created_at.desc()))
+            if usage:
+                usage.tokens_used += len(response) // 4
+                
+            task.status = "completed"
+            task.updated_at = datetime.utcnow()
+            await db.commit()
+            logger.info(f"Quiz {new_quiz.id} generated successfully")
+            break # Success, exit retry loop
+            
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"AI JSON hallucination on attempt {attempt+1}, retrying prompt...")
+                continue
+                
+            logger.error(f"Failed to parse AI JSON response after {max_retries} attempts: {response}")
+            task.status = "failed"
+            task.error_message = f"Parse error: {str(e)}"
+            task.updated_at = datetime.utcnow()
+            await db.commit()
         logger.error(f"Failed to parse AI JSON response: {response}")
         task.status = "failed"
         task.error_message = f"Parse error: {str(e)}"
