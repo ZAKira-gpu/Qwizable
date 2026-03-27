@@ -84,8 +84,7 @@ async def generate_from_file(
     await increment_usage(db, current_user.id)
     
     task = BackgroundTask(
-        job_name=f"document_quiz_{current_user.id}_{file.filename}",
-        task_metadata={"user_id": current_user.id, "filename": file.filename, "difficulty": difficulty, "num_questions": num_questions, "thread_id": thread_id, "instructions": instructions}
+        job_name=f"document_quiz_{current_user.id}_{file.filename}"
     )
     db.add(task)
     await db.commit()
