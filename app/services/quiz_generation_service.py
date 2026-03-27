@@ -44,22 +44,30 @@ Return STRICT JSON:
   ]
 }}
 """
-    response_text = await call_novita_api(prompt)
-    if not response_text:
-        return []
-        
-    try:
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        data = json.loads(response_text)
-        if "quiz" in data:
-            return data["quiz"]
-        elif isinstance(data, list):
-            return data
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"Chunk Quiz JSON Decode failed: {e} -> {response_text}")
-        return []
+    max_retries = 3
+    for attempt in range(max_retries):
+        response_text = await call_novita_api(prompt)
+        if not response_text:
+            if attempt == max_retries - 1:
+                return []
+            continue
+            
+        try:
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            data = json.loads(response_text)
+            if "quiz" in data:
+                return data["quiz"]
+            elif isinstance(data, list):
+                return data
+            return []
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Threaded Quiz JSON Decode hallucination on attempt {attempt+1}, retrying...")
+                continue
+            logger.error(f"Chunk Quiz JSON Decode failed after {max_retries} attempts: {e} -> {response_text}")
+            return []
+    return []
 
 async def merge_and_deduplicate_quizzes(all_questions: List[Dict[str, Any]], target_num: int) -> List[Dict[str, Any]]:
     final_quiz = []
