@@ -7,7 +7,7 @@ from alembic import context
 from app.core.config import settings
 from app.db.base_class import Base
 
-from app.models import User, Usage, AuditLog, Payment, Subscription, Quiz, Question, UserAnswer, Result, BackgroundTask
+from app.models import User, Usage, AuditLog, Payment, Subscription, Quiz, Question, UserAnswer, Result, BackgroundTask, ChatMessage
 
 config = context.config
 

@@ -5,3 +5,4 @@ from app.models.payment import Payment, Subscription
 from app.models.quiz import Quiz, Question, UserAnswer
 from app.models.result import Result
 from app.models.task import BackgroundTask
+from app.models.chat import ChatMessage
