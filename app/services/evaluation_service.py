@@ -27,6 +27,10 @@ async def evaluate_answers(db: AsyncSession, quiz_id: int, user_answers_data: li
             "is_correct": is_correct
         })
         
+        from app.models.quiz import UserAnswer
+        ua_row = UserAnswer(quiz_id=quiz_id, question_id=q.id, user_answer=ans.user_answer)
+        db.add(ua_row)
+        
     score = (correct_count / len(questions)) * 100 if questions else 0
     prompt = f"Analyze these quiz results and provide weak areas and feedback in strict JSON: {{\"weak_areas\": {{\"topic\": \"reason\"}}, \"feedback\": \"General advice\"}}. Results: {json.dumps(feedback_context)}"
     
