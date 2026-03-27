@@ -9,8 +9,17 @@ async def process_paddle_webhook(db: AsyncSession, alert_name: str, alert_id: st
     if existing_event.scalars().first():
         logger.info(f"Idempotency hit: Webhook {alert_id} already processed. Ignoring.")
         return True 
-        
-    user_id_str = payload.get("passthrough") or payload.get("custom_data", "")
+
+    # Paddle Classic: passthrough is a plain string user_id
+    # Paddle V2: custom_data is a dict {"user_id": 42}
+    user_id_str = payload.get("passthrough")
+    if not user_id_str:
+        custom_data = payload.get("custom_data")
+        if isinstance(custom_data, dict):
+            user_id_str = custom_data.get("user_id")
+        elif isinstance(custom_data, str):
+            user_id_str = custom_data
+
     if not user_id_str:
         logger.error(f"No user_id in webhook passthrough for webhook {alert_id}")
         return False
@@ -20,9 +29,21 @@ async def process_paddle_webhook(db: AsyncSession, alert_name: str, alert_id: st
     except ValueError:
         return False
 
-    status = "confirmed" if alert_name in ["subscription_created", "subscription_updated", "payment_succeeded", "subscription_payment_succeeded"] else "failed"
+    # Support both Paddle Classic and V2 event names
+    SUCCESS_EVENTS = {
+        "subscription_created", "subscription_updated",
+        "payment_succeeded", "subscription_payment_succeeded",
+        # Paddle Billing V2 event types:
+        "subscription.created", "subscription.updated",
+        "transaction.completed", "transaction.paid",
+    }
+    status = "confirmed" if alert_name in SUCCESS_EVENTS else "failed"
 
-    raw_amount = payload.get("p_price") or payload.get("sale_gross") or payload.get("checkout_gross") or payload.get("amount") or "0.0"
+    raw_amount = (
+        payload.get("p_price") or payload.get("sale_gross") or
+        payload.get("checkout_gross") or payload.get("amount") or
+        payload.get("details", {}).get("totals", {}).get("grand_total") or "0.0"
+    )
     
     new_payment = Payment(
         user_id=user_id,
@@ -35,7 +56,8 @@ async def process_paddle_webhook(db: AsyncSession, alert_name: str, alert_id: st
     await db.commit()
     
     if status == "confirmed":
-        plan_id = payload.get("subscription_plan_id") or "pro"
+        plan_id = payload.get("subscription_plan_id") or payload.get("product_id") or "pro"
         await upgrade_user_plan(db, user_id, str(plan_id), alert_id)
         
     return True
+
