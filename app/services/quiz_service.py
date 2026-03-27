@@ -78,8 +78,3 @@ async def generate_quiz_task(db: AsyncSession, task_id: int, user_id: int, topic
             task.error_message = f"Parse error: {str(e)}"
             task.updated_at = datetime.utcnow()
             await db.commit()
-        logger.error(f"Failed to parse AI JSON response: {response}")
-        task.status = "failed"
-        task.error_message = f"Parse error: {str(e)}"
-        task.updated_at = datetime.utcnow()
-        await db.commit()
