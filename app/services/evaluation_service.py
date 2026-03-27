@@ -35,10 +35,19 @@ async def evaluate_answers(db: AsyncSession, quiz_id: int, user_answers_data: li
     feedback = "Good job."
     if ai_resp:
         try:
-            parsed = json.loads(ai_resp)
+            clean_resp = ai_resp.strip()
+            if clean_resp.startswith("```json"):
+                clean_resp = clean_resp[7:]
+            elif clean_resp.startswith("```"):
+                clean_resp = clean_resp[3:]
+            if clean_resp.endswith("```"):
+                clean_resp = clean_resp[:-3]
+                
+            parsed = json.loads(clean_resp.strip())
             weak_areas = parsed.get("weak_areas", {})
             feedback = parsed.get("feedback", "Good job.")
-        except json.JSONDecodeError: pass
+        except Exception:
+            pass
             
     new_result = Result(quiz_id=quiz_id, score=score, weak_areas=weak_areas, feedback=feedback)
     db.add(new_result)
